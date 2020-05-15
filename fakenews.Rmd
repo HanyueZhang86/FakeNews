@@ -66,7 +66,7 @@ using ggplot
 ## news and cases
 
 ```{r}
-nc <- tibble("Date" = x, news, case, case2 = c(case[15:n], rep(NA, 14)))
+nc <- tibble("Date" = x, news, case, case2 = c(case[6:n], rep(NA, 5)))
 coeff <- max(case, na.rm = TRUE)/max(news, na.rm = TRUE)
 ggplot(nc, aes(x=Date)) + 
     geom_line(aes(y = news), color = "salmon", size = 1) + 
@@ -104,8 +104,9 @@ ggplot(nc, aes(x=Date)) +
 
 model
 ```{r}
-model <- lm(case[51:n]~poly(news[37:(n-14)], 2))
+model <- lm(log(case[51:125])~poly(log(news[46:120]), 2))
 summary(model)
+par(mfrow = c(2, 2))
 plot(model)
 ```
 
@@ -115,7 +116,7 @@ plot(model)
 rate <- ifelse(cases$totalTestResultsIncrease < 100, 0, cases$positiveIncrease/cases$totalTestResultsIncrease)
 names(rate) <- cases$date
 rate <- ifelse(x %in% as.Date(cases$date), rate[as.character(x)], NA)
-nr <- tibble("Date" = x, news, rate, rate2 = c(rate[15:n], rep(NA, 14)))
+nr <- tibble("Date" = x, news, rate, rate2 = c(rate[6:n], rep(NA, 5)))
 coeff <- max(rate, na.rm = TRUE)/max(news, na.rm = TRUE)
 ggplot(nr, aes(x=Date)) + 
     geom_line(aes(y = news), color = "lightblue", size = 1) + 
@@ -180,6 +181,8 @@ model
 ```{r}
 model2 <- lm(death$death~death$death_num)
 summary(model2)
+par(mfrow = c(2, 2))
+plot(model2)
 ```
 
 ## news and hospitalied
@@ -208,6 +211,8 @@ model
 ```{r}
 model3 <- lm(hospitalized$hospitalized~hospitalized$hos_num)
 summary(model3)
+par(mfrow = c(2, 2))
+plot(model3)
 ```
 
 Text Mining
