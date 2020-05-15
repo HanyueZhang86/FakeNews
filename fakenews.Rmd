@@ -9,16 +9,21 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-
 ```{r}
+library(data.table)
 library(stringr)
 library(tidyverse)
-library(gsheet)
+library(purrr)
+library(ggplot2)
+library(lubridate)
+library(tidytext)
+library(widyr)
+library(rlang)
 ```
 
-
+Historic US Confirmed Cases Cata
 ```{r}
-cases <- read.csv("us_covid19_daily.csv")
+cases <- read.csv("https://covidtracking.com/api/v1/us/daily.csv")
 ```
 
 Gedelt Data
@@ -35,40 +40,215 @@ gdelt_path <- read.table("http://data.gdeltproject.org/blog/2020-coronavirus-nar
 gdelt_path <- vapply(gdelt_path, as.character, character(nrow(gdelt_path)))
 gdelt_path <- as.matrix(gdelt_path[str_detect(gdelt_path, "falsehood")])
 gdelt_data <- apply(gdelt_path, 1, grabRemote)
+```
 
-
+Gedelt Data Cleaning
+```{r}
 date <- as.Date(substr(gdelt_data[[1]][[1]], 1, 10), "%Y-%m-%d")
 for(i in 2:44){
     date <- c(date, as.Date(substr(gdelt_data[[i]][[1]], 1, 10), "%Y-%m-%d"))
 }
-
 x <- sort(unique(c(date, as.Date(as.character(cases$date), "%Y%m%d"))))
 date_table <- table(date)
 news <- ifelse(x %in% as.Date(names(date_table)), date_table[as.character(x)], NA)
-news <- news/max(news, na.rm = TRUE)
+news_percentage <- news/max(news, na.rm = TRUE)
 cases[[1]] <- as.Date(as.character(cases$date), "%Y%m%d")
-positive <- cases$positive
+positive <- cases$positiveIncrease
 names(positive) <- cases$date
 case <- ifelse(x %in% cases$date, positive[as.character(x)], NA)
-case <- case/max(case, na.rm = TRUE)
-plot(x, news, type = "l")
-lines(x, case, col = "red")
+case_percentage <- case/max(case, na.rm = TRUE)
+n <- length(case)
 ```
 
-put 14 days forward for the cases:
+
+using ggplot
+
+## news and cases
 
 ```{r}
-case <- c(case[15:124], rep(NA, 14))
-plot(x, news, type = "l")
-lines(x, case, col = "red")
+nc <- tibble("Date" = x, news, case, case2 = c(case[15:n], rep(NA, 14)))
+coeff <- max(case, na.rm = TRUE)/max(news, na.rm = TRUE)
+ggplot(nc, aes(x=Date)) + 
+    geom_line(aes(y = news), color = "salmon", size = 1) + 
+    geom_line(aes(y = case / coeff), color="purple", linetype="twodash", size = 1)+
+    scale_y_continuous(
+        name = "News",
+        sec.axis = sec_axis(~.*coeff, name="Cases")
+    )+
+    theme_light()+
+    theme(
+        axis.title.y = element_text(color = "salmon", size=11),
+        axis.title.y.right = element_text(color = "purple", size=11),
+        title =element_text(size=12, face='bold')
+    ) +
+    ggtitle("Comparison Between Number of News \nand Daily Increasing Positive Cases")
 ```
 
-
-ESOC Data
+14 days after 
 ```{r}
-esoc_data <- gsheet2tbl("https://drive.google.com/file/d/1QJw3MieuT_T529RaACPhg3WgEQBmJ4jK/view")
-esoc_data <- esoc_data[!is.na(esoc_data$Publication_Date),]
-date <- as.Date(esoc_data$Publication_Date, "%d-%b-%y")
-plot(table(date), type = "l")
+ggplot(nc, aes(x=Date)) + 
+    geom_line(aes(y = news), color = "salmon", size = 1) + 
+    geom_line(aes(y = case2 / coeff), color="purple", linetype="twodash", size = 1)+
+    scale_y_continuous(
+        name = "News",
+        sec.axis = sec_axis(~.*coeff, name="Cases")
+    )+
+    theme_light()+
+    theme(
+        axis.title.y = element_text(color = "salmon", size=11),
+        axis.title.y.right = element_text(color = "purple", size=11),
+        title =element_text(size=12, face='bold')
+    ) +
+    ggtitle("Comparison Between Number of News \nand Daily Increasing Infected Cases")
 ```
 
+model
+```{r}
+model <- lm(case[51:n]~poly(news[37:(n-14)], 2))
+summary(model)
+plot(model)
+```
+
+
+## news and rate
+```{r}
+rate <- ifelse(cases$totalTestResultsIncrease < 100, 0, cases$positiveIncrease/cases$totalTestResultsIncrease)
+names(rate) <- cases$date
+rate <- ifelse(x %in% as.Date(cases$date), rate[as.character(x)], NA)
+nr <- tibble("Date" = x, news, rate, rate2 = c(rate[15:n], rep(NA, 14)))
+coeff <- max(rate, na.rm = TRUE)/max(news, na.rm = TRUE)
+ggplot(nr, aes(x=Date)) + 
+    geom_line(aes(y = news), color = "lightblue", size = 1) + 
+    geom_line(aes(y = rate / coeff), color="blue", linetype="twodash", size = 1)+
+    scale_y_continuous(
+        name = "News",
+        sec.axis = sec_axis(~.*coeff, name="Positive Rate")
+    )+
+    theme_light()+
+    theme(
+        axis.title.y = element_text(color = "lightblue", size=11),
+        axis.title.y.right = element_text(color = "blue", size=11),
+        title =element_text(size=12, face='bold')
+    ) +
+    ggtitle("Comparison Between Number of News and Daily Positive Rate")
+```
+
+14 days after
+```{r}
+ggplot(nr, aes(x=Date)) + 
+    geom_line(aes(y = news), color = "lightblue", size = 1) + 
+    geom_line(aes(y = rate2 / coeff), color="blue", linetype="twodash", size = 1)+
+    scale_y_continuous(
+        name = "News",
+        sec.axis = sec_axis(~.*coeff, name="Positive Rate")
+    )+
+    theme_light()+
+    theme(
+        axis.title.y = element_text(color = "lightblue", size=11),
+        axis.title.y.right = element_text(color = "blue", size=11),
+        title =element_text(size=12, face='bold')
+    ) +
+    ggtitle("Comparison Between Number of News and \nDaily Infected Rate")
+
+```
+
+## news and death 
+```{r}
+words <- read.csv("dada.csv")
+death_num <- c(0, words$n[words$word == "death"])
+death <- tibble(date = cases$date, death = cases$deathIncrease) %>% mutate(week = week(ymd(as.Date(date)))) %>% group_by(week) %>% summarise(death = sum(death))
+death <- tibble(week = c(1, 2, 3, death$week), death = c(0, 0, 0, 0, death$death[-1]), death_num)
+coeff <- max(death$death, na.rm = TRUE)/max(death$death_num, na.rm = TRUE)
+ggplot(death, aes(x=week)) + 
+    geom_line(aes(y = death_num), color = "darkorange", size = 2) + 
+    geom_line(aes(y = death / coeff), color="darkolivegreen4", linetype="twodash", size = 2)+
+    scale_y_continuous(
+        name = "how many time 'death' appears",
+        sec.axis = sec_axis(~.*coeff, name="Death Increasing")
+    )+
+    theme_light()+
+    theme(
+        axis.title.y = element_text(color = "darkorange", size=11),
+        axis.title.y.right = element_text(color = "darkolivegreen4", size=11),
+        title =element_text(size=12, face='bold')
+    ) +
+    ggtitle("Comparison Between Number of How Many Time 'death' appears \nin The News and Weekly Increasing Death")
+
+```
+
+model
+```{r}
+model2 <- lm(death$death~death$death_num)
+summary(model2)
+```
+
+## news and hospitalied
+```{r}
+hos_num <- c(0, 0, words$n[words$word == "hospital"])
+hospitalized <- tibble(date = cases$date, hospitalized = cases$hospitalizedIncrease) %>% mutate(week = week(ymd(as.Date(date)))) %>% group_by(week) %>% summarise(hospitalized = sum(hospitalized))
+hospitalized <- tibble(week = c(1, 2, 3, hospitalized$week), hospitalized = c(0, 0, 0, 0, hospitalized$hospitalized[-1]), hos_num)
+coeff <- max(hospitalized$hospitalized, na.rm = TRUE)/max(hospitalized$hos_num, na.rm = TRUE)
+ggplot(hospitalized, aes(x=week)) + 
+    geom_line(aes(y = hos_num), color = "indianred3", size = 2) + 
+    geom_line(aes(y = hospitalized / coeff), color="slateblue3", linetype="twodash", size = 2)+
+    scale_y_continuous(
+        name = "how many time 'hospital' appears",
+        sec.axis = sec_axis(~.*coeff, name="Hospitalized Increasing")
+    )+
+    theme_light()+
+    theme(
+        axis.title.y = element_text(color = "indianred3", size=11),
+        axis.title.y.right = element_text(color = "slateblue3", size=11),
+        title =element_text(size=12, face='bold')
+    ) +
+    ggtitle("Comparison Between Number of How Many Time 'hospital' appears \nin The News and Weekly Increasing Hospitalized")
+```
+
+model
+```{r}
+model3 <- lm(hospitalized$hospitalized~hospitalized$hos_num)
+summary(model3)
+```
+
+Text Mining
+```{r}
+gdelt_clean_data <- pluck(gdelt_data, 1)
+colnames(gdelt_clean_data) <- c("date", "url", "title", "misinformation")
+
+for (i in 2:length(gdelt_data)) {
+    x <- pluck(gdelt_data, i)
+    names(x) <- c("date", "url", "title", "misinformation")
+    gdelt_clean_data <- rbind(gdelt_clean_data, x)
+}
+
+gdelt_clean_data <- as_tibble(gdelt_clean_data) %>% mutate(date = as.Date(substr(date, 1, 10), "%Y-%m-%d")) %>% arrange(date)
+```
+
+Most Common Words Bar Chart Race by Week
+```{r}
+gdelt_clean_data <- gdelt_clean_data %>% mutate("week" = week(ymd(date))) %>% select(date, week, url, title, misinformation)
+
+gdelt_clean_data_byweek <- gdelt_clean_data %>% unnest_tokens(word, misinformation) %>% select(week, word) %>% group_by(week) %>% count(word) %>% anti_join(stop_words, "word") %>% arrange(week, desc(n))
+gdelt_clean_data_byweek <- pivot_wider(gdelt_clean_data_byweek, names_from = "week", values_from = "n")
+
+common_words <- character()
+for (i in seq(ncol(gdelt_clean_data_byweek) - 1)) {
+  words <- gdelt_clean_data_byweek %>% select(word, as.character(i)) %>% arrange(desc(!!rlang::sym(as.character(i)))) %>% head(20)
+  common_words <- c(common_words, words$word)
+}
+common_words <- unique(common_words)
+most_common_words_byweek <- gdelt_clean_data_byweek %>% filter(word %in% common_words)
+# write.csv(most_common_words_byweek, "gdelt data")
+```
+
+```{r}
+# 30 most common words in misinformation
+most_common_mis_words <- gdelt_clean_data %>% unnest_tokens(word, misinformation) %>% count(word, sort = TRUE) %>% anti_join(stop_words, "word")
+
+most_common_words %>% head(30) %>% mutate(word = reorder(word, n)) %>% ggplot(aes(word, n)) + geom_col() + coord_flip() + labs(title = "Most Common 30 Words Appears in Misinformation")
+
+# 30 most common words in title
+most_common_title_words <-gdelt_clean_data %>% unnest_tokens(word, title) %>% count(word, sort = TRUE) %>% anti_join(stop_words, "word")
+
+most_common_title_words %>% head(30) %>% mutate(word = reorder(word, n)) %>% ggplot(aes(word, n)) + geom_col() + coord_flip() + labs(title = "Most Common 30 Words Appears in Title")
+```
